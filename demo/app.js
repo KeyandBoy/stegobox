@@ -29,6 +29,7 @@ const state = {
   extracted: null, // { type, name, body, imageData?, text? }
   customMode: false,
   batchCovers: [],
+  batchCoverSize: null, // { width, height } of first cover, decoded async
   batchSecrets: [], // { file, kind }
   batchEmbedResults: [], // { name, blob }
   batchStegos: [],
@@ -167,7 +168,20 @@ function mimeFromName(name) {
 }
 
 function baseName(name) {
-  return (name || 'file').replace(/[\\/]/g, '_');
+  const cleaned = (name || 'file').replace(/[\\/]/g, '_');
+  const dot = cleaned.lastIndexOf('.');
+  return dot > 0 ? cleaned.slice(0, dot) : cleaned;
+}
+
+async function readImageSize(file) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const size = { width: bitmap.width, height: bitmap.height };
+    if (bitmap.close) bitmap.close();
+    return size;
+  } catch {
+    return null;
+  }
 }
 
 function capLongEdge(imageData) {
@@ -207,13 +221,17 @@ function updateCapacity() {
   }
   $('embedBtn').disabled = !(state.cover && hasSecret());
 
-  if (state.batchCovers[0]) {
-    const b = capacityBytes(state.batchCovers[0].width, state.batchCovers[0].height, options);
-    $('batchCapacityInfo').textContent = `≈ ${formatBytes(Math.max(0, b))} / ${t('preview.cover')}`;
+  const coverSize = state.batchCoverSize;
+  if (coverSize && Number.isFinite(coverSize.width) && Number.isFinite(coverSize.height)) {
+    const b = capacityBytes(coverSize.width, coverSize.height, options);
+    $('batchCapacityInfo').textContent = Number.isFinite(b)
+      ? `≈ ${formatBytes(Math.max(0, b))} / ${t('preview.cover')}`
+      : '—';
   } else {
     $('batchCapacityInfo').textContent = '—';
   }
   $('batchEmbedBtn').disabled = !(state.batchCovers.length && state.batchSecrets.length);
+  $('batchExtractBtn').disabled = !state.batchStegos.length;
 }
 
 function updateTierUI() {
@@ -582,26 +600,31 @@ function renderBatchList(listId, items, renderRow) {
 }
 
 function updateBatchHints() {
-  if (state.batchCovers.length) {
-    $('batchCoverHint').textContent = state.batchCovers
-      .map((f) => f.name)
-      .join(', ');
-  }
-  if (state.batchSecrets.length) {
-    $('batchSecretHint').textContent = state.batchSecrets.map((s) => s.file.name).join(', ');
-  }
-  if (state.batchStegos.length) {
-    $('batchStegoHint').textContent = state.batchStegos.map((f) => f.name).join(', ');
-  }
+  $('batchCoverHint').textContent = state.batchCovers.length
+    ? state.batchCovers.map((f) => f.name).join(', ')
+    : t('batch.coversHint');
+  $('batchSecretHint').textContent = state.batchSecrets.length
+    ? state.batchSecrets.map((s) => s.file.name).join(', ')
+    : t('batch.secretsHint');
+  $('batchStegoHint').textContent = state.batchStegos.length
+    ? state.batchStegos.map((f) => f.name).join(', ')
+    : t('batch.stegosHint');
   updateCapacity();
 }
 
 $('batchCoverInput').addEventListener('change', async (event) => {
   state.batchCovers = Array.from(event.target.files || []);
+  state.batchCoverSize = null;
   state.batchEmbedResults = [];
   $('batchEmbedZipBtn').disabled = true;
   renderBatchList('batchEmbedList', [], () => {});
   updateBatchHints();
+  const first = state.batchCovers[0];
+  if (first) {
+    const size = await readImageSize(first);
+    if (state.batchCovers[0] === first) state.batchCoverSize = size;
+    updateBatchHints();
+  }
 });
 
 $('batchSecretInput').addEventListener('change', (event) => {
@@ -691,6 +714,7 @@ $('batchEmbedZipBtn').addEventListener('click', async () => {
 
 $('batchEmbedResetBtn').addEventListener('click', () => {
   state.batchCovers = [];
+  state.batchCoverSize = null;
   state.batchSecrets = [];
   state.batchEmbedResults = [];
   $('batchCoverInput').value = '';
