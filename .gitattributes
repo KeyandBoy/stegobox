@@ -1,0 +1,2 @@
+# Keep Windows batch launchers as CRLF; everything else stays LF.
+*.bat text eol=crlf

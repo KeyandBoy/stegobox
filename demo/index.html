@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>隐匣 StegoBox — 鲁棒图像隐写</title>
+<meta name="description" content="把图片、文件或文本藏进另一张图，抵抗 JPEG 重压缩与等比缩放。纯浏览器本地运行。">
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg-glow" aria-hidden="true"></div>
+
+<header class="site-header">
+  <a class="brand" href="./">
+    <span class="brand-mark" data-i18n="brand.mark">隐</span>
+    <span class="brand-name" data-i18n="brand.name">隐匣 StegoBox</span>
+  </a>
+  <nav class="site-nav">
+    <button type="button" class="nav-btn" id="langBtn" data-i18n="nav.lang">EN</button>
+    <a href="https://github.com/tuoPzf/rac-hide" target="_blank" rel="noopener" data-i18n="nav.github">GitHub</a>
+    <a href="https://github.com/tuoPzf/rac-hide/blob/main/docs/algorithm.md" target="_blank" rel="noopener" data-i18n="nav.algorithm">算法</a>
+  </nav>
+</header>
+
+<main>
+  <section class="hero">
+    <p class="eyebrow" data-i18n="hero.eyebrow">鲁棒 DCT 图像隐写</p>
+    <h1 data-i18n="hero.title">把秘密藏进另一张图里。</h1>
+    <p class="lead" data-i18n="hero.lead">
+      把秘密图片、任意文件或文本嵌入载体图的 DCT 系数，抵抗 JPEG/WebP 重压缩与等比缩放。全部在浏览器本地运行——不上传、不经过服务器。
+    </p>
+    <ul class="badges">
+      <li data-i18n="badge.zero">零依赖</li>
+      <li data-i18n="badge.blind">盲提取</li>
+      <li data-i18n="badge.rescale">抗缩放</li>
+      <li data-i18n="badge.gpl">GPL-3.0</li>
+    </ul>
+  </section>
+
+  <div class="tabs" role="tablist" aria-label="Mode">
+    <button class="tab active" data-tab="embed" role="tab" data-i18n="tab.embed">嵌入</button>
+    <button class="tab" data-tab="extract" role="tab" data-i18n="tab.extract">提取</button>
+    <button class="tab" data-tab="batchEmbed" role="tab" data-i18n="tab.batchEmbed">批量嵌入</button>
+    <button class="tab" data-tab="batchExtract" role="tab" data-i18n="tab.batchExtract">批量提取</button>
+  </div>
+
+  <!-- ===================== EMBED ===================== -->
+  <section id="embed" class="panel" role="tabpanel">
+    <div class="upload-grid">
+      <label class="drop" for="coverInput">
+        <input type="file" id="coverInput" accept="image/*">
+        <span class="drop-icon" aria-hidden="true">🖼️</span>
+        <span class="drop-title" data-i18n="cover.title">载体图</span>
+        <span class="drop-hint" id="coverHint" data-i18n="cover.hint">点击选择或拖入文件。建议 ≥ 512×512。</span>
+      </label>
+      <div class="drop secret-drop">
+        <div class="secret-type-row">
+          <span class="row-label" data-i18n="secret.type">秘密类型</span>
+          <div class="seg" id="secretTypeSeg" role="radiogroup">
+            <button type="button" class="seg-btn active" data-type="image" data-i18n="secret.image">图片</button>
+            <button type="button" class="seg-btn" data-type="file" data-i18n="secret.file">文件</button>
+            <button type="button" class="seg-btn" data-type="text" data-i18n="secret.text">文本</button>
+          </div>
+        </div>
+
+        <label class="secret-pane" id="secretPaneImage">
+          <input type="file" id="secretInput" accept="image/*">
+          <span class="drop-icon" aria-hidden="true">🔒</span>
+          <span class="drop-title" data-i18n="secret.title">秘密图片</span>
+          <span class="drop-hint" id="secretHint" data-i18n="secret.hint">隐藏在载体中。</span>
+        </label>
+
+        <label class="secret-pane hidden" id="secretPaneFile">
+          <input type="file" id="secretFileInput">
+          <span class="drop-icon" aria-hidden="true">📦</span>
+          <span class="drop-title" data-i18n="secret.fileTitle">秘密文件</span>
+          <span class="drop-hint" id="secretFileHint" data-i18n="secret.fileHint">任意文件，受载体容量限制。</span>
+        </label>
+
+        <div class="secret-pane hidden" id="secretPaneText">
+          <textarea id="secretTextInput" rows="4" data-i18n-placeholder="secret.textPlaceholder" placeholder="输入要隐藏的文本…"></textarea>
+          <span class="drop-hint" id="secretTextHint"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="row-label" data-i18n="row.capacity">容量</span>
+      <span class="row-value" id="capacityInfo">—</span>
+    </div>
+
+    <div class="row">
+      <span class="row-label" data-i18n="row.enhance">载体增强</span>
+      <select id="coverUpscale" class="grow">
+        <option value="0" data-i18n="enhance.0">不放大</option>
+        <option value="2048" data-i18n="enhance.2048">长边 2048</option>
+        <option value="2560" data-i18n="enhance.2560">长边 2560</option>
+        <option value="3072" data-i18n="enhance.3072">长边 3072</option>
+        <option value="4096" data-i18n="enhance.4096">长边 4096</option>
+        <option value="custom" data-i18n="enhance.custom">自定义</option>
+      </select>
+      <input type="number" id="coverCustomLong" class="grow" min="64" max="8192" step="8" data-i18n-placeholder="enhance.ph" placeholder="自定义长边" inputmode="numeric">
+    </div>
+
+    <div class="tier" id="racTierBar">
+      <div class="tier-wrap" id="tierSliderWrap">
+        <div class="tier-labels"><span data-i18n="tier.highQuality">高质量</span><span data-i18n="tier.antiCompression">抗压缩</span></div>
+        <input type="range" class="tier-slider" id="tierSlider" min="0" max="100" value="50" aria-label="Operating point">
+      </div>
+      <div class="tier-info">
+        <span class="tier-name" id="tierName">均衡</span>
+        <span class="tier-desc" id="tierDesc">视觉隐蔽与压缩抗性平衡</span>
+        <button class="link-btn" id="customBtn" type="button" data-i18n="tier.customBtn">自定义参数</button>
+      </div>
+      <div class="custom-panel" id="racCustomPanel">
+        <div class="param-row">
+          <span class="param-label" data-i18n="param.ppb">每块系数对</span>
+          <input type="range" id="paramPPB" min="1" max="12" value="2">
+          <span class="param-val" id="paramPPB_v">2</span>
+        </div>
+        <div class="param-row">
+          <span class="param-label" data-i18n="param.repeat">重复次数</span>
+          <input type="range" id="paramRepeat" min="1" max="5" value="1">
+          <span class="param-val" id="paramRepeat_v">1</span>
+        </div>
+        <div class="param-row">
+          <span class="param-label" data-i18n="param.nsym">纠错强度</span>
+          <input type="range" id="paramNsym" min="8" max="64" step="8" value="48">
+          <span class="param-val" id="paramNsym_v">48</span>
+        </div>
+        <div class="param-row">
+          <span class="param-label" data-i18n="param.marginMin">最小边际</span>
+          <input type="range" id="paramMarginMin" min="5" max="100" value="40">
+          <span class="param-val" id="paramMarginMin_v">40</span>
+        </div>
+        <div class="param-row">
+          <span class="param-label" data-i18n="param.marginGain">边际增益</span>
+          <input type="range" id="paramMarginGain" min="5" max="30" value="14">
+          <span class="param-val" id="paramMarginGain_v">1.4</span>
+        </div>
+        <div class="param-row">
+          <span class="param-label" data-i18n="param.marginMax">最大边际</span>
+          <input type="range" id="paramMarginMax" min="50" max="255" value="200">
+          <span class="param-val" id="paramMarginMax_v">200</span>
+        </div>
+        <div class="param-row">
+          <span class="param-label" data-i18n="param.secretMax">秘密长边</span>
+          <input type="range" id="paramSecretMax" min="64" max="4096" step="64" value="1280">
+          <span class="param-val" id="paramSecretMax_v">1280</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="embedBtn" disabled data-i18n="btn.embed">嵌入</button>
+      <button class="btn ghost" id="downloadStegoBtn" disabled data-i18n="btn.downloadStego">下载隐写图</button>
+      <button class="btn ghost" id="resetEmbedBtn" type="button" data-i18n="btn.reset">重置</button>
+    </div>
+    <p class="status" id="embedStatus"></p>
+    <div class="progress" id="embedProgress"><div class="progress-bar"></div></div>
+
+    <div class="previews three">
+      <figure class="card">
+        <figcaption data-i18n="preview.cover">载体</figcaption>
+        <div class="canvas-wrap"><canvas id="coverCanvas"></canvas></div>
+        <p class="meta" id="coverMeta"></p>
+      </figure>
+      <figure class="card">
+        <figcaption data-i18n="preview.secret">秘密</figcaption>
+        <div class="canvas-wrap"><canvas id="secretCanvas"></canvas></div>
+        <div class="payload-box hidden" id="secretPayloadBox">
+          <p class="payload-label" id="secretPayloadLabel"></p>
+          <pre class="payload-text" id="secretPayloadText"></pre>
+        </div>
+        <p class="meta" id="secretMeta"></p>
+      </figure>
+      <figure class="card">
+        <figcaption data-i18n="preview.stego">隐写结果</figcaption>
+        <div class="canvas-wrap"><canvas id="stegoCanvas"></canvas></div>
+        <p class="meta" id="stegoMeta"></p>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================== EXTRACT ===================== -->
+  <section id="extract" class="panel hidden" role="tabpanel">
+    <label class="drop wide" for="stegoInput">
+      <input type="file" id="stegoInput" accept="image/*">
+      <span class="drop-icon" aria-hidden="true">🔍</span>
+      <span class="drop-title" data-i18n="preview.stegoIn">隐写图</span>
+      <span class="drop-hint" id="stegoHint" data-i18n="extract.stegoHint">嵌入步骤生成的图片。</span>
+    </label>
+
+    <div class="manual-box">
+      <span class="manual-label" data-i18n="extract.manual">原始尺寸（可选）</span>
+      <div class="manual-inputs">
+        <input type="number" id="manualW" min="16" max="8192" data-i18n-placeholder="extract.manualW" placeholder="宽" inputmode="numeric">
+        <span>×</span>
+        <input type="number" id="manualH" min="16" max="8192" data-i18n-placeholder="extract.manualH" placeholder="高" inputmode="numeric">
+      </div>
+      <p class="manual-hint" data-i18n="extract.manualHint">仅当空间标尺无法自动读取时使用。</p>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="extractBtn" disabled data-i18n="btn.extract">提取</button>
+      <button class="btn ghost" id="downloadSecretBtn" disabled data-i18n="btn.downloadSecret">下载秘密</button>
+      <button class="btn ghost" id="resetExtractBtn" type="button" data-i18n="btn.reset">重置</button>
+    </div>
+    <p class="status" id="extractStatus"></p>
+    <div class="progress" id="extractProgress"><div class="progress-bar"></div></div>
+
+    <div class="previews two">
+      <figure class="card">
+        <figcaption data-i18n="preview.stegoIn">隐写图</figcaption>
+        <div class="canvas-wrap"><canvas id="extractStegoCanvas"></canvas></div>
+        <p class="meta" id="extractStegoMeta"></p>
+      </figure>
+      <figure class="card">
+        <figcaption data-i18n="preview.recovered">恢复的秘密</figcaption>
+        <div class="canvas-wrap"><canvas id="extractedCanvas"></canvas></div>
+        <div class="payload-box hidden" id="extractedPayloadBox">
+          <p class="payload-label" id="extractedPayloadLabel"></p>
+          <pre class="payload-text" id="extractedPayloadText"></pre>
+        </div>
+        <p class="meta" id="extractMeta"></p>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================== BATCH EMBED ===================== -->
+  <section id="batchEmbed" class="panel hidden" role="tabpanel">
+    <div class="upload-grid">
+      <label class="drop" for="batchCoverInput">
+        <input type="file" id="batchCoverInput" accept="image/*" multiple>
+        <span class="drop-icon" aria-hidden="true">🖼️</span>
+        <span class="drop-title" data-i18n="batch.covers">载体图（多选）</span>
+        <span class="drop-hint" id="batchCoverHint" data-i18n="batch.coversHint">为每个秘密生成一张隐写图（依次配对，不足则循环使用第一张）。</span>
+      </label>
+      <label class="drop" for="batchSecretInput">
+        <input type="file" id="batchSecretInput" multiple>
+        <span class="drop-icon" aria-hidden="true">🔒</span>
+        <span class="drop-title" data-i18n="batch.secrets">秘密文件（多选，图片/任意文件）</span>
+        <span class="drop-hint" id="batchSecretHint" data-i18n="batch.secretsHint">每个秘密单独嵌入一张载体。</span>
+      </label>
+    </div>
+
+    <div class="row">
+      <span class="row-label" data-i18n="row.capacity">容量</span>
+      <span class="row-value" id="batchCapacityInfo">—</span>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="batchEmbedBtn" disabled data-i18n="btn.runBatch">开始批量处理</button>
+      <button class="btn ghost" id="batchEmbedZipBtn" disabled data-i18n="btn.downloadAll">全部下载 (ZIP)</button>
+      <button class="btn ghost" id="batchEmbedResetBtn" type="button" data-i18n="btn.reset">重置</button>
+    </div>
+    <p class="status" id="batchEmbedStatus"></p>
+    <div class="progress" id="batchEmbedProgress"><div class="progress-bar"></div></div>
+    <ul class="batch-list" id="batchEmbedList"></ul>
+  </section>
+
+  <!-- ===================== BATCH EXTRACT ===================== -->
+  <section id="batchExtract" class="panel hidden" role="tabpanel">
+    <label class="drop wide" for="batchStegoInput">
+      <input type="file" id="batchStegoInput" accept="image/*" multiple>
+      <span class="drop-icon" aria-hidden="true">🔍</span>
+      <span class="drop-title" data-i18n="batch.stegos">隐写图（多选）</span>
+      <span class="drop-hint" id="batchStegoHint" data-i18n="batch.stegosHint">批量提取每个文件中的秘密。</span>
+    </label>
+
+    <div class="actions">
+      <button class="btn primary" id="batchExtractBtn" disabled data-i18n="btn.runBatch">开始批量处理</button>
+      <button class="btn ghost" id="batchExtractZipBtn" disabled data-i18n="btn.downloadAll">全部下载 (ZIP)</button>
+      <button class="btn ghost" id="batchExtractResetBtn" type="button" data-i18n="btn.reset">重置</button>
+    </div>
+    <p class="status" id="batchExtractStatus"></p>
+    <div class="progress" id="batchExtractProgress"><div class="progress-bar"></div></div>
+    <ul class="batch-list" id="batchExtractList"></ul>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <p data-i18n="footer.license">GPL-3.0-or-later · 用于研究、版权保护与合法隐蔽通信。</p>
+  <p class="muted" data-i18n="footer.notice">隐写只隐藏载荷，不加密。需要保密请先自行加密。</p>
+  <p class="muted" data-i18n="footer.derived">基于 RAC-Hide 改制 · 保留原作者版权声明。</p>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
